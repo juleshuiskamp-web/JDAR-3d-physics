@@ -1,0 +1,2 @@
+class InvalidCoordinatesError(BaseException):
+    pass
