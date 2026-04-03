@@ -1,13 +1,48 @@
 from __future__ import annotations # Makes circular references possible
 import engineErrors as e
+import math
+
+EPSILON = 10 ** -15 # Small number used for collision checks etc
 
 class Position2D():
     def __init__(self, x: float, y: float):
         self.x = x
         self.y = y
+
+    def __sub__(self, other) -> Position2D:
+        if not isinstance(other, Position2D):
+            return NotImplemented
+        x = self.x - other.x
+        y = self.y - other.y
+        del self
+        return Position2D(x, y)
     
+    def __add__(self, other) -> Position2D:
+        if not isinstance(other, Position2D):
+            return NotImplemented
+        x = self.x + other.x
+        y = self.y + other.y
+        del self
+        return Position2D(x, y)
+
     def __str__(self):
         return str(self.pack())
+    
+    def __mul__(self, other) -> Position2D:
+        if not isinstance(other, (float, int)):
+            return NotImplemented
+        x = self.x * other
+        y = self.y * other
+        del self
+        return Position2D(x, y)
+    
+    def __truediv__(self, other) -> Position2D:
+        if not isinstance(other, (float, int)):
+            return NotImplemented
+        x = self.x / other
+        y = self.y / other
+        del self
+        return Position2D(x, y)
 
     def pack(self) -> tuple[float, float]:
         return (self.x, self.y)
@@ -15,6 +50,15 @@ class Position2D():
     def update(self, x: float, y: float) -> None:
         self.x = x
         self.y = y
+
+    def normalize(self) -> Position2D:
+        x = 1 if self.x > 0 else -1 if self.x < 0 else 0
+        y = 1 if self.y > 0 else -1 if self.y < 0 else 0
+        del self
+        return Position2D(x, y)
+    
+    def copy(self):
+        return Position2D(self.x, self.y)
 
 class Vector2D():
     def __init__(self, origin: Position2D, target: Position2D, force: float):
@@ -25,22 +69,39 @@ class Vector2D():
         force (float): Force from the Origin to the Target
         """
         self.origin = origin
-        self.target = target
         self.force = force
+        target -= origin # Change target so it is in perspective to the origin
+        
+        # Calculate lenght and normalize so 1 == 1N
+        lenght = math.sqrt(target.x ** 2 + target.y ** 2)
+        target /= lenght
+        target *= force
+
+        target += origin
+        self.target = target
 
     def __add__(self, other):
         if isinstance(other, Vector2D):
-            # Create new target X and Y
-            X, Y = other.target.x - other.origin.x, other.target.y - other.origin.y
-            # Create a new target Position2D
-            target = Position2D(self.target.x + X, self.target.y + Y)
-            # Return new Vector
-            return Vector2D(self.origin, target, self.force + other.force)
+            if not self.origin.pack() == other.origin.pack():
+                raise e.InvalidOriginsError(f"Origins {self.origin} and {other.origin} are different")
+            target = self.target - self.origin # normalize targets so it is in perspective to the origin
+            other.target -= self.origin
+            target += other.target
+            origin = self.origin
+            force = self.force + other.force
+            del self # Clean up
+            return Vector2D(origin, target, force)
         if isinstance(other, (int, float)): # Check if other is a integer or float
-            # Return new Vector2D with added force
-            return Vector2D(self.origin, self.target, self.force + other)
+            origin = self.origin
+            force = self.force + other
+            # Calculate new target
+            target = self.target - self.origin
+            target /= self.force
+            target *= force
+            del self # Clean up
+            return Vector2D(origin, target, force)
         return NotImplemented
-    
+
     def pack(self) -> tuple[tuple[float, float], tuple[float, float], float]:
         return (self.origin.pack(), self.target.pack(), self.force)
 
@@ -101,7 +162,7 @@ class Line2D():
         if (not self.infinite) and (invalidX or invalidY):
             # X is invalid or Y is invalid
             return False
-        print(f"Point {crossPoint} crossed with line {self}")
+        
         # Returns default (False) if no crossPoint is found
         return crossPoint
     
@@ -121,7 +182,6 @@ class Object2D():
         mass (float, optional): Mass of the object. Defaults to 1
         """
         self.root = root
-        root.addObject(self)
 
         # Check if points are valid
         pointsInvalid = any([ Coordinate1 == Coordinate2 for Coordinate1, Coordinate2 in zip(Point1.pack(), Point2.pack()) ])
@@ -137,11 +197,15 @@ class Object2D():
         yCoordinates = (Point1.y, Point2.y)
         Point1.update(x = min(xCoordinates), y = min(yCoordinates))
         Point2.update(x = max(xCoordinates), y = max(yCoordinates))
+        self.Middle = Position2D(sum(xCoordinates)/2, sum(yCoordinates)/2) # Average of X and Y: middle of the object
         
         # Create all four corners
         # [bottomLeft, topLeft, topRight, bottomRight]
         self.corners = [Point1, Position2D(Point1.x, Point2.y), Point2, Position2D(Point2.x, Point1.y)]
         
+        # Add to root after creating corners so collisionchecks can actually happen
+        root.addObject(self)
+
     def __truediv__(self, other):
         if not isinstance(other, Object2D):
             return NotImplemented
@@ -152,27 +216,56 @@ class Object2D():
         other_vertices.append(Line2D(other.corners[0], other.corners[3])) # Final vertice
 
         collisions = [ vertice / point for vertice in other_vertices for point in self.corners ]
-        print(f"Collisions: {collisions}")
-        print("Vertices:", ' '.join([ str(vertice.pack()) for vertice in other_vertices]))
+        return collisions
+
+    def __str__(self):
+        return str(self.pack())
+    
+    def move(self, x: float=0, y: float=0, checkCollisions: bool=False):
+        """
+        Move the targetted object by x and y.
+        Parameters:
+        x (float, optional): X movement
+        y (float, optional): Y movement
+        checkCollisions (bool, optional): Check for collisions during movement? Defaults to False.
+        """
+        for corner in self.corners:
+            corner.x += x
+            corner.y += y
+
+    def pack(self):
+        return tuple([ corner.pack() for corner in self.corners ])
 
 class Engine2D():
     def __init__(self, Gravity: float=1):
         """
-        Create a new Engine
+        Create a new Engine to place objects in
         Parameters:
         Gravity (float, optional): Gravity multiplier. Defaults to 1
         """
         self.gravity = Gravity
         self.objects = []
 
-    def addObject(self, Object: Object2D, Gravity: float=1):
+    def addObject(self, Object: Object2D):
         """
-        Add a object to the Engine
+        Add a object to the Engine and check if it doesnt interfere with other Objects
         Parameters:
         Object (Object2D): Object to add to the Engine
         """
-        #TODO: Add Collision checks to prevent the new Object from being added if it is
-        #      in another object
+
+        for collisionObject in self.objects:
+            # Find direction from new Object to other Object and normalize it
+            direction = (collisionObject.Middle - Object.Middle).normalize()
+            # Multiply direction by EPSILION to get a extremly small number
+            direction *= EPSILON
+            # Move the other object so it wont collide
+            collisionObject.move(direction.x, direction.y)
+
+            if any(Object / collisionObject): # New object collides with the collisionObject
+                raise e.EngineCollisionError(f"This object collides with another object!")
+            # Move other object back (obviously)
+            collisionObject.move(-direction.x, -direction.y)
+
         self.objects.append(Object)
 
     def renderTick(self) -> None:
@@ -187,16 +280,17 @@ class Engine2D():
         for object1, object2 in objectCombinations:
             collisions.append(object1 / object2)
 
-
 if __name__ == "__main__":
     origin = Position2D(2, -2)
     target = Position2D(4, -6)
-    origin2 = Position2D(-2, -2)
-    target2 = Position2D(4, -6)
+    origin2 = Position2D(2, -2)
+    target2 = Position2D(4, 4)
     line = Line2D(origin, target)
     root = Engine2D()
     d = Vector2D(origin, target, 4)
-    g = Vector2D(origin, target, 4)
+    g = Vector2D(origin2, target2, 4)
+    new = d + g
+    print(f"d: {d.pack()}\ng: {g.pack()}\nnew: {new.pack()}")
     objectc = Object2D(root, target, origin)
     object2 = Object2D(root, target2, origin2)
     root.renderTick()
