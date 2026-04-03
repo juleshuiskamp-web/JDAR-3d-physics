@@ -5,8 +5,13 @@ class Position2D():
     def __init__(self, x: float, y: float):
         self.x = x
         self.y = y
+    
+    def __str__(self):
+        return str(self.pack())
+
     def pack(self) -> tuple[float, float]:
         return (self.x, self.y)
+
     def update(self, x: float, y: float) -> None:
         self.x = x
         self.y = y
@@ -46,11 +51,11 @@ class Line2D():
         Parameters:
         Point1 (Position2D): Point 1
         Point2 (Position2D): Point 2
-        infinite (bool, optional): Should the line continue after the two points. Defaults to false
+        infinite (bool, optional): Should the line after the two points. Defaults to false
         """
         
         self.infinite = infinite
-        if Point1.x == Point2.x and Point1.y == Point2.y and not infinite:
+        if Point1.pack() == Point2.pack() and not infinite:
             raise e.InvalidCoordinatesError(f"Point {Point1.pack()} and Point {Point2.pack()} are on the same location.\n- Did you mean to use Position2D instead?")
         self.Point1, self.Point2 = (Point1, Point2) if Point1.x <= Point2.x else (Point2, Point1) # Point 1 forced to be the most left point
 
@@ -67,22 +72,41 @@ class Line2D():
             # Find the bias of the line
             self.bias = self.Point1.y - self.slope * Point1.x
 
-        print(f"Slope: {self.slope} - Bias: {self.bias} ({Point1.pack()}, {Point2.pack()}) Vertical: {self.vertical}")
-
     def __truediv__(self, other):
         if not isinstance(other, Position2D):
             return NotImplemented
+        crossPoint = False # Defaults to no cross point
+
+        # Specifics: vertical and horizontal line:
+        if not self.vertical is None:
+            if other.x == self.vertical:
+                crossPoint = Position2D(other.x, other.y)
+            else:
+                return False
+        if self.slope == 0: 
+            if other.y == self.bias: # Horizontal line + line goes over point
+                crossPoint = Position2D(other.x, other.y)
+            else:
+                return False
         # Check for crossing between Line and Dot
         doesLineAndDotCross = self.bias == other.y - self.slope * other.x
         if doesLineAndDotCross:
-            crossX = (other.y - self.bias) / self.slope
-            crossY = self.slope * crossX + self.bias # Fill into own line formula
+            crossPoint = Position2D(other.x, other.y)
+        selfYs = (min(self.Point1.y, self.Point2.y), max(self.Point1.y, self.Point2.y))
+        # Check if point is possible on the line
 
-            # If self is not infinite, make sure to check if the option is actually valid
-            if (not self.infinite) and (not self.Point2.x >= crossX >= self.Point1.x):
-                return None
-            # Return new position with the CrossX and CrossY
-            return Position2D(crossX, crossY)
+        invalidX = not self.Point2.x >= other.x >= self.Point1.x
+        invalidY = False if not self.vertical is None else not selfYs[0] >= other.y >= selfYs[1] 
+
+        if (not self.infinite) and (invalidX or invalidY):
+            # X is invalid or Y is invalid
+            return False
+        print(f"Point {crossPoint} crossed with line {self}")
+        # Returns default (False) if no crossPoint is found
+        return crossPoint
+    
+    def __str__(self):
+        return str(self.pack())
 
     def pack(self) -> tuple[tuple[float, float], tuple[float, float]]:
         return (self.Point1.pack(), self.Point2.pack())
@@ -100,8 +124,8 @@ class Object2D():
         root.addObject(self)
 
         # Check if points are valid
-        pointsValid = any([ Coordinate1 == Coordinate2 for Coordinate1, Coordinate2 in zip(Point1.pack(), Point2.pack()) ])
-        if pointsValid:
+        pointsInvalid = any([ Coordinate1 == Coordinate2 for Coordinate1, Coordinate2 in zip(Point1.pack(), Point2.pack()) ])
+        if pointsInvalid:
             # Points have equal X or Y coordinates
             raise e.InvalidCoordinatesError(f"Point {Point1.pack()} and Point {Point2.pack()} are not opposite corners")
         
@@ -121,10 +145,14 @@ class Object2D():
     def __truediv__(self, other):
         if not isinstance(other, Object2D):
             return NotImplemented
+
         # Other is a Object2D --> Check for collision between each corner of self and the other Object
         # Create lines of the vertices of the other Object
         other_vertices = [ Line2D(corner, other.corners[i+1]) for i, corner in enumerate(other.corners) if not i > 2 ]
         other_vertices.append(Line2D(other.corners[0], other.corners[3])) # Final vertice
+
+        collisions = [ vertice / point for vertice in other_vertices for point in self.corners ]
+        print(f"Collisions: {collisions}")
         print("Vertices:", ' '.join([ str(vertice.pack()) for vertice in other_vertices]))
 
 class Engine2D():
@@ -147,23 +175,28 @@ class Engine2D():
         #      in another object
         self.objects.append(Object)
 
-    def renderTick(self):
+    def renderTick(self) -> None:
         """
         Render a singular tick.
         - Applies gravity to all object
         - Detects collision
         """
+        objectCombinations = [ (object1, object2) for object1 in self.objects for object2 in self.objects ]
+        collisions = []
+        
+        for object1, object2 in objectCombinations:
+            collisions.append(object1 / object2)
 
 
 if __name__ == "__main__":
     origin = Position2D(2, -2)
     target = Position2D(4, -6)
+    origin2 = Position2D(-2, -2)
+    target2 = Position2D(4, -6)
     line = Line2D(origin, target)
-    print((line / Position2D(6, -8)))
     root = Engine2D()
     d = Vector2D(origin, target, 4)
     g = Vector2D(origin, target, 4)
-    print(f"PACKED: {(d + g).pack()}")
-    object = Object2D(root, target, origin)
-    object2 = Object2D(root, target, origin)
-    print(f"{object / object2}")
+    objectc = Object2D(root, target, origin)
+    object2 = Object2D(root, target2, origin2)
+    root.renderTick()
