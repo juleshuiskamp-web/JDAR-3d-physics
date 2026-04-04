@@ -2,7 +2,7 @@ from __future__ import annotations # Makes circular references possible
 import engineErrors as e
 import math
 
-EPSILON = 10 ** -15 # Small number used for collision checks etc
+EPSILON = 10 ** -9 # Small number used for collision checks etc
 
 class Position2D():
     def __init__(self, x: float, y: float):
@@ -212,8 +212,8 @@ class Object2D():
 
         # Other is a Object2D --> Check for collision between each corner of self and the other Object
         # Create lines of the vertices of the other Object
-        other_vertices = [ Line2D(corner, other.corners[i+1]) for i, corner in enumerate(other.corners) if not i > 2 ]
-        other_vertices.append(Line2D(other.corners[0], other.corners[3])) # Final vertice
+        # [ bottom, left, top, right ] collisions between other corners
+        other_vertices = [ Line2D(corner, other.corners[i-1]) for i, corner in enumerate(other.corners) ]
 
         collisions = [ vertice / point for vertice in other_vertices for point in self.corners ]
         return collisions
@@ -227,7 +227,7 @@ class Object2D():
         Parameters:
         x (float, optional): X movement
         y (float, optional): Y movement
-        checkCollisions (bool, optional): Check for collisions during movement? Defaults to False.
+        checkCollisions (bool, optional): Check for collisions during movement? Defaults to False. NOT IMPLEMENTED YET
         """
         for corner in self.corners:
             corner.x += x
@@ -246,25 +246,27 @@ class Engine2D():
         self.gravity = Gravity
         self.objects = []
 
-    def addObject(self, Object: Object2D):
+    def addObject(self, Object: Object2D, ignorecollisions: bool=False):
         """
         Add a object to the Engine and check if it doesnt interfere with other Objects
         Parameters:
         Object (Object2D): Object to add to the Engine
+        ignorecollisions (bool, optional): Should the Engine ignore collisions when spawning the Object? Defaults to False
         """
 
-        for collisionObject in self.objects:
-            # Find direction from new Object to other Object and normalize it
-            direction = (collisionObject.Middle - Object.Middle).normalize()
-            # Multiply direction by EPSILION to get a extremly small number
-            direction *= EPSILON
-            # Move the other object so it wont collide
-            collisionObject.move(direction.x, direction.y)
+        if not ignorecollisions:
+            for collisionObject in self.objects:
+                # Find direction from new Object to other Object and normalize it
+                direction = (collisionObject.Middle - Object.Middle).normalize()
+                # Multiply direction by EPSILION to get a extremly small direction number
+                direction *= EPSILON
+                # Move the other object so it wont collide
+                collisionObject.move(direction.x, direction.y)
 
-            if any(Object / collisionObject): # New object collides with the collisionObject
-                raise e.EngineCollisionError(f"This object collides with another object!")
-            # Move other object back (obviously)
-            collisionObject.move(-direction.x, -direction.y)
+                if any(Object / collisionObject): # New object collides with the collisionObject
+                    raise e.EngineNewObjectCollisionError(f"This object collides with another object!")
+                # Move other object back (obviously)
+                collisionObject.move(-direction.x, -direction.y)
 
         self.objects.append(Object)
 
@@ -285,12 +287,8 @@ if __name__ == "__main__":
     target = Position2D(4, -6)
     origin2 = Position2D(2, -2)
     target2 = Position2D(4, 4)
-    line = Line2D(origin, target)
     root = Engine2D()
-    d = Vector2D(origin, target, 4)
-    g = Vector2D(origin2, target2, 4)
-    new = d + g
-    print(f"d: {d.pack()}\ng: {g.pack()}\nnew: {new.pack()}")
-    objectc = Object2D(root, target, origin)
+    object1 = Object2D(root, target, origin)
     object2 = Object2D(root, target2, origin2)
+    print(object1 / object2)
     root.renderTick()

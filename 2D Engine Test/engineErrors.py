@@ -4,5 +4,5 @@ class InvalidCoordinatesError(BaseException):
 class InvalidOriginsError(BaseException):
     pass
 
-class EngineCollisionError(BaseException):
+class EngineNewObjectCollisionError(BaseException):
     pass
