@@ -225,9 +225,14 @@ class Position2D():
     
     def copy(self):
         return Position2D(self.x, self.y)
+    
+    def convertToScreen(self):
+        x = self.x-root.center[0]/root.zoom + root.screenWidth/2
+        y = self.y-root.center[1]/root.zoom + root.screenHeight/2
+        return [x,y]
 
 class Object2D():
-    def __init__(self, root: mainWindow, Point1: Position2D, Point2: Position2D,pointList:list,colour ,mass: float=1,):
+    def __init__(self, Point1: Position2D, Point2: Position2D,pointList:list,colour ,mass: float=1,root="root"):
         """
         Parameters:
         root (Engine2D): Root of this Object
@@ -270,13 +275,14 @@ class Object2D():
         return str(self.pack())
 
     def place(self,root):
+        return
         pointCollection = []
         for point in self.pointList:
-            pointCollection.extend([])
-        for x in 
-        root.canvas.create_polygon(zip(*point.pack()) for point in pointList)
+            pointCollection.extend(zip(*point.convertToScreen) )
+        root.canvas.create_polygon(zip(*pointCollection),bg="purple")
 
 if __name__ == "__main__":
     root = mainWindow()
     root.renderButtons()
     root.start()
+    hallo = Object2D()
