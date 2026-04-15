@@ -44,6 +44,10 @@ class Position2D():
         del self
         return Position2D(x, y)
 
+    def distance(self, point: Position2D) -> float:
+        d = math.sqrt((point.x - self.x)**2 + (point.y - self.y)**2)
+        return d
+
     def pack(self) -> tuple[float, float]:
         return (self.x, self.y)
 
@@ -132,6 +136,29 @@ class Line2D():
             self.slope = (Point1.y - Point2.y) / (Point1.x - Point2.x)
             # Find the bias of the line
             self.bias = self.Point1.y - self.slope * Point1.x
+    
+    def distance(self, point: Position2D):
+        if self.vertical: # Vertical line: distance is x difference
+            return abs(self.vertical - point.x)
+        elif self.slope == 0: # Horizontal line: distance is y difference
+            return abs(self.bias - point.y)
+        
+        # Find perpendicular line
+        pSlope = -1 / self.slope
+        pBias = point.y - pSlope * point.x
+
+        # Solve intersection between lines
+        # pSlope*x + pBias = self.slope*x + self.bias
+        crossX = (pBias - self.bias) / (self.slope - pSlope)
+
+        if not self.infinite: # Line is segment
+            if not self.Point1.x >= crossX >= self.Point2.x:
+                # Shortest distance is either endpoint
+                distance = min(point.distance(self.Point1), point.distance(self.Point2))
+                return distance
+        crossY = self.slope * crossX + self.bias
+        intersection = Position2D(crossX, crossY)
+        return intersection.distance(point)
 
     def __truediv__(self, other):
         if not isinstance(other, Position2D):
@@ -182,6 +209,7 @@ class Object2D():
         mass (float, optional): Mass of the object. Defaults to 1
         """
         self.root = root
+        self.forces = set()
 
         # Check if points are valid
         pointsInvalid = any([ Coordinate1 == Coordinate2 for Coordinate1, Coordinate2 in zip(Point1.pack(), Point2.pack()) ])
@@ -276,6 +304,13 @@ class Engine2D():
         - Applies gravity to all object
         - Detects collision
         """
+        # Apply gravity
+        for object in self.objects:
+            # Calculate gravity vector
+            target = object.Middle + Position2D(0, -1)
+            gravity = Vector2D(object.Middle, target, 9.81 * self.gravity)
+            object.forces.add(gravity)
+
         objectCombinations = [ (object1, object2) for object1 in self.objects for object2 in self.objects ]
         collisions = []
         
@@ -283,12 +318,18 @@ class Engine2D():
             collisions.append(object1 / object2)
 
 if __name__ == "__main__":
-    origin = Position2D(2, -2)
-    target = Position2D(4, -6)
-    origin2 = Position2D(2, -2)
-    target2 = Position2D(4, 4)
-    root = Engine2D()
-    object1 = Object2D(root, target, origin)
-    object2 = Object2D(root, target2, origin2)
-    print(object1 / object2)
-    root.renderTick()
+    p = Position2D(2, -2)
+    p2 = Position2D(5, 0)
+    p3 = Position2D(4, 10)
+    l = Line2D(p, p2)
+    print(l.distance(p3))
+
+    # origin = Position2D(2, -2)
+    # target = Position2D(4, -6)
+    # origin2 = Position2D(2, -2)
+    # target2 = Position2D(4, 4)
+    # root = Engine2D()
+    # object1 = Object2D(root, target, origin)
+    # object2 = Object2D(root, target2, origin2)
+    # print(object1 / object2)
+    # root.renderTick()
