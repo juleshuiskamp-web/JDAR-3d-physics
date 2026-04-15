@@ -1,4 +1,7 @@
-Dit project is een 3d physics engine hiermee kan je een object tegen een ander object botsen en daar een logisch gevolg op komen (dat ze uitelkaar vliegen)
-Dit is bedoelt voor:
-We willen hiermee.....
-We hebben nu een 2d test engine gemaakt
+This project's goal is a 3D Physics Engine with collision detections. 
+
+We are currently working on a 2D Test Engine and already around 60% complete with the engine and 50% with the GUI handler.
+Current Features:
+- Vectors, Positions and objects from points (also called positions)
+- Collision detection between objects
+- Distance between points and between points and lines
