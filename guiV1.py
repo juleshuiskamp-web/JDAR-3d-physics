@@ -6,6 +6,9 @@ import tkinter as tk
 import math as m
 
 class MainWindow():
+    """
+    creates an instance of the gui window with a visualized virtual room
+    """
     def __init__(self):
         self.zoom = 1
         self.worldCenter = Position2D(0,0)
@@ -39,7 +42,8 @@ class MainWindow():
         self.LineSet = [[],[]]
         self.LineSet = self.createLineSet()
 
-    def draw(self,):
+    def draw(self):
+        """refreshes al to draw objects and visual refrenses"""
         self.canvas.delete("all")
         self.LineSet = self.createLineSet()
         for thing in self.objects:
@@ -54,6 +58,7 @@ class MainWindow():
                 self.canvas.create_oval(x-size, y-size, x+size, y+size, fill="white")
 
     def draggin(self,event):
+        """updates screencenter based on mouse movement"""
         if not self.dragging:
             return
         event = Position2D(event.x,event.y)
@@ -63,30 +68,33 @@ class MainWindow():
         self.draw()
     
     def rightClick(self,event):
+        """code for the event of mouse right click on the mainwindow canvas"""
         self.dragging = True
         self.lastMousePos = Position2D(event.x, event.y)
     
     def rightRelease(self,event):
+        """code for the event of mouseClick release"""
         self.dragging = False
     
     def zooming(self,event):
+        """code for resizing the virtual world on the screen based on scroll wheel movement"""
         factor = 1.1 if event.delta > 0 else 0.9
         self.zoom *= factor
         self.draw()
 
-    def elements(self):
-        pass
-
     def start(self):
+        """starts the visual aspect of the class"""
         self.window.mainloop()
 
     def renderButtons(self):
+        """initializes all show buttons"""
         self.buttons = [tk.Button(self.options,text="refresh points",command=self.edito,width=5)for _ in range(8)]
         for i,button in enumerate(self.buttons):
             button.grid(row=0, column=i, padx=5, pady=5, sticky="nsew")
             self.options.grid_columnconfigure(i, weight=1)
 
     def edito(self):
+        """opens the edit menu for creating new objects"""
         if not self.toggleEditor.winfo_ismapped():
             self.toggleEditor.pack(side="right", fill="y")
             current = 0
@@ -117,24 +125,23 @@ class MainWindow():
         expand()
     
     def addObject(self,Object):
+        """this is for adding objects all objects which need to be drawn"""
         self.objects.append(Object)
 
     def createLineSet(self):
+        """creates a line set for reference points on the screen"""
         def getGridStep():
+            """returns a grid point which is closest to the  point"""
             target_pixels = 100
-
             units_per_pixel = self.zoom
 
             raw_step = target_pixels * units_per_pixel
-
             exponent = m.floor(m.log10(raw_step))
             base = raw_step / (10 ** exponent)
-
             if base < 3:
                 nice = 1
             else:
                 nice = 10
-
             return nice * (10 ** exponent)
         def virToScreen( x, y):
             sx = (x - self.worldCenter.x) / self.zoom + self.screenSize.x / 2
@@ -178,7 +185,12 @@ class MainWindow():
 #         super().__init__()
 
 class Position2D():
-    def __init__(self, x: float, y: float,root = "root"):
+    """
+    This class is a modified version of the class positio2d in engine.py to be usable in the gui
+    I mainly added functions for point conversion to other numbers and acces to variables from the mainWindow
+    
+    """
+    def __init__(self, x: float, y: float, root = "root"):
         self.x = x
         self.y = y
         self.root = root
@@ -219,9 +231,11 @@ class Position2D():
         return Position2D(x, y)
 
     def pack(self) -> tuple[float, float]:
+        """returns the x and y in an tuple"""
         return (self.x, self.y)
 
     def update(self, x: float, y: float) -> None:
+        """takes to new values to change the objects coordinates to"""
         self.x = x
         self.y = y
 
@@ -240,39 +254,23 @@ class Position2D():
         return (x,y)
     
     def convertToWorld(self):
-        x = (self.x-self.screenCenter.x)*self.root.zoom + self.root.worldCenter.x
-        y = (self.y-self.screenCenter.y)*self.root.zoom + self.root.worldCenter.y
+        x = (self.x - self.root.screenCenter.x)*self.root.zoom + self.root.worldCenter.x
+        y = (self.y - self.root.screenCenter.y)*self.root.zoom + self.root.worldCenter.y
         return (x,y)
 
 class Object2D():
+    """
+    Parameters:
+    root (Engine2D): Root of this Object
+    Point1 (Position2D): Corner one of the Object
+    Point2 (Position2D): Corner opposite to Point1 of the Object
+    mass (float, optional): Mass of the object. Defaults to 1
+    """
     def __init__(self,pointList:list ,mass: float=1,root="root",bg="purple"):
-        """
-        Parameters:
-        root (Engine2D): Root of this Object
-        Point1 (Position2D): Corner one of the Object
-        Point2 (Position2D): Corner opposite to Point1 of the Object
-        mass (float, optional): Mass of the object. Defaults to 1
-        """
         self.bg = bg
         self.root = root
         self.pointList = pointList
-        # Check if points are valid
-        # if pointsInvalid:
-        #     # Points have equal X or Y coordinates
-        #     raise e.InvalidCoordinatesError(f"Point {Point1.pack()} and Point {Point2.pack()} are not opposite corners")
-        
-        # Make sure Point1 is always at the bottom left and Point2 at the top right
-        # xCoordinates = (Point1.x, Point2.x)
-        # yCoordinates = (Point1.y, Point2.y)
-        # Point1.update(x = min(xCoordinates), y = min(yCoordinates))
-        # Point2.update(x = max(xCoordinates), y = max(yCoordinates))
         self.Middle = Position2D(sum(point.x for point in self.pointList)/2, sum(point.y for point in self.pointList)/2) # Average of X and Y: middle of the object
-        
-        # Create all four corners
-        # [bottomLeft, topLeft, topRight, bottomRight]
-        # self.corners = [Point1, Position2D(Point1.x, Point2.y), Point2, Position2D(Point2.x, Point1.y)]
-        
-        # Add to root after creating corners so collisionchecks can actually happen
         self.root.addObject(self)
 
     def __str__(self):
@@ -286,4 +284,5 @@ if __name__ == "__main__":
     root = MainWindow()
     root.renderButtons()
     hallo = Object2D(pointList = [Position2D(20,200,root=root),Position2D(1000,200,root=root),Position2D(1000,1000,root=root),Position2D(200,1000,root=root)],root=root)
+    Gitta = Object2D(pointList= [Position2D(50,300, root=root),Position2D(900,400,root=root),Position2D(50,500,root=root),Position2D(900,500,root=root),Position2D(333,222,root=root)],root=root,bg="green")
     root.start()
