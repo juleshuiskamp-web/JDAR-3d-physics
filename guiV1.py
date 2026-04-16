@@ -11,14 +11,14 @@ class MainWindow():
     """
     def __init__(self):
         self.zoom = 1
-        self.worldCenter = Position2D(0,0)
-        self.lastMousePos = Position2D(0,0)
+        self.worldCenter = Position2D(0,0,root=self)
+        self.lastMousePos = Position2D(0,0,root=self)
         self.dragging = False
 
         self.window = tk.Tk()
         self.window.title("2d physics")
 
-        self.screenSize = Position2D(self.window.winfo_screenwidth(),self.window.winfo_screenheight())
+        self.screenSize = Position2D(self.window.winfo_screenwidth(),self.window.winfo_screenheight(),root=self)
         self.screenCenter = Position2D(self.screenSize.x/2,self.screenSize.y/2,root=self)
         self.window.geometry(f"{self.screenSize.x}x{self.screenSize.y}")
         
@@ -26,7 +26,7 @@ class MainWindow():
         self.options.pack(side="top", fill="x")
         self.canvas = tk.Canvas(self.window,bg="lightblue",bd="0",highlightthickness=0)
         self.canvas.pack(side="left", fill="both",expand=True)
-        self.canvasCenter = Position2D(self.canvas.winfo_width(),self.canvas.winfo_height())
+        self.canvasCenter = Position2D(self.canvas.winfo_width(),self.canvas.winfo_height(),root=self)
 
         self.toggleEditor = tk.Frame(self.window, width=0,bg="purple")
         self.toggleEditor.pack_propagate(False)
@@ -51,7 +51,7 @@ class MainWindow():
 
         for i in range(10):
             for j in range(10):
-                point = Position2D(i*100,j*100)
+                point = Position2D(i*100,j*100,root=self)
                 x = (i*100-self.worldCenter.x)/self.zoom+self.screenSize.x/2
                 y = (j*100-self.worldCenter.y)/self.zoom+self.screenSize.y/2
                 size = 5 / self.zoom
@@ -61,16 +61,16 @@ class MainWindow():
         """updates screencenter based on mouse movement"""
         if not self.dragging:
             return
-        event = Position2D(event.x,event.y)
+        event = Position2D(event.x,event.y,root=self)
         delta = event - self.lastMousePos
         self.worldCenter.update(*((self.worldCenter-delta).pack()))
-        self.lastMousePos = Position2D(event.x, event.y)
+        self.lastMousePos = Position2D(event.x, event.y,root=self)
         self.draw()
     
     def rightClick(self,event):
         """code for the event of mouse right click on the mainwindow canvas"""
         self.dragging = True
-        self.lastMousePos = Position2D(event.x, event.y)
+        self.lastMousePos = Position2D(event.x, event.y,root=self)
     
     def rightRelease(self,event):
         """code for the event of mouseClick release"""
@@ -132,53 +132,36 @@ class MainWindow():
         """creates a line set for reference points on the screen"""
         def getGridStep():
             """returns a grid point which is closest to the  point"""
-            target_pixels = 100
-            units_per_pixel = self.zoom
-
-            raw_step = target_pixels * units_per_pixel
+            raw_step = 100 * self.zoom
             exponent = m.floor(m.log10(raw_step))
-            base = raw_step / (10 ** exponent)
-            if base < 3:
-                nice = 1
-            else:
-                nice = 10
-            return nice * (10 ** exponent)
-        def virToScreen( x, y):
-            sx = (x - self.worldCenter.x) / self.zoom + self.screenSize.x / 2
-            sy = (y - self.worldCenter.y) / self.zoom + self.screenSize.y / 2
-            return sx, sy
-        def roundToSTep(value, step):
-            rounded = round(value / step) * step
-            return rounded if rounded else 1
+            base = [1 if (raw_step / (10 ** exponent))<3 else 10]
+            return base[0] * (10 ** exponent)
+
         def roundToGrid(value, step):
             return round(value / step) * step
         for group in self.LineSet:
             for line in group:
                 self.canvas.delete(line)
-        relScreenSize = "{:.20e}".format(self.screenSize.x / self.zoom)
-        relScreenSizeS = relScreenSize.split("e")
-        relScreenSize = float(relScreenSizeS[0])
         bigLineDist = getGridStep()
         smallLineDist = bigLineDist/2
-        ohoek = Position2D(self.worldCenter.x-(self.screenSize.x*self.zoom/2),self.worldCenter.y-(self.screenSize.y*self.zoom/2))
-        lhoek = Position2D(self.worldCenter.x+(self.screenSize.x*self.zoom/2),self.worldCenter.y+(self.screenSize.y*self.zoom/2))
-        oohoek = Position2D(roundToGrid(ohoek.x,smallLineDist),roundToGrid(ohoek.y,smallLineDist))
-        llhoek = Position2D(roundToGrid(lhoek.x,smallLineDist),roundToGrid(lhoek.y,smallLineDist))
-        vertLineSet = [oohoek.x + smallLineDist * i for i in range(int(llhoek.x/smallLineDist)-int(oohoek.x/smallLineDist))]
+        ohoek = Position2D(0,0,root=self).convertToWorld()
+        lhoek = self.screenSize.convertToWorld()
+        oohoek = Position2D(roundToGrid(ohoek.x,smallLineDist),roundToGrid(ohoek.y,smallLineDist),root=self)
+        llhoek = Position2D(roundToGrid(lhoek.x,smallLineDist),roundToGrid(lhoek.y,smallLineDist),root=self)
+        vertLineSet = [oohoek.x + smallLineDist * i for i in range(int((llhoek.x-oohoek.x)/smallLineDist))]
         horLineSet = [oohoek.y + smallLineDist * i for i in range(int((llhoek.y-oohoek.y)/smallLineDist))]
-        vertLineSetNew = []
-        horLineSetNew = []
+        lineSetNew = []
         for z in vertLineSet:
-            x1, y1 = virToScreen(x=z, y=ohoek.y)
-            x2, y2 = virToScreen(x=z, y=lhoek.y)
-            vertLineSetNew.append(self.canvas.create_line(x1, y1, x2, y2, fill="red", width=1))
+            p1 = Position2D(x=z, y=ohoek.y,root=self).convertToScreen()
+            p2 = Position2D(x=z, y=lhoek.y,root=self).convertToScreen()
+            lineSetNew.append(self.canvas.create_line(p1.x, p1.y, p2.x, p2.y, fill="red", width=1))
         for z in horLineSet:
-            x1, y1 = virToScreen(x=ohoek.x, y=z)
-            x2, y2 = virToScreen(x=lhoek.x, y=z)
+            p1 = Position2D(x=ohoek.x, y=z,root=self).convertToScreen()
+            p2 = Position2D(x=lhoek.x, y=z,root=self).convertToScreen()
 
-            horLineSetNew.append(self.canvas.create_line(x1, y1, x2, y2, fill="red", width=1))
+            lineSetNew.append(self.canvas.create_line(p1.x, p1.y, p2.x, p2.y, fill="red", width=1))
         
-        return [vertLineSetNew,horLineSetNew]
+        return [lineSetNew]
 
 # class Frame(tk.Frame):
 #     def __init__(self):
@@ -201,7 +184,7 @@ class Position2D():
         x = self.x - other.x
         y = self.y - other.y
         del self
-        return Position2D(x, y)
+        return Position2D(x, y,root=root)
     
     def __add__(self, other) -> Position2D:
         if not isinstance(other, Position2D):
@@ -209,7 +192,7 @@ class Position2D():
         x = self.x + other.x
         y = self.y + other.y
         del self
-        return Position2D(x, y)
+        return Position2D(x, y,root=self.root)
 
     def __str__(self):
         return str(self.pack())
@@ -220,7 +203,7 @@ class Position2D():
         x = self.x * other
         y = self.y * other
         del self
-        return Position2D(x, y)
+        return Position2D(x, y,root=self.root)
     
     def __truediv__(self, other) -> Position2D:
         if not isinstance(other, (float, int)):
@@ -228,7 +211,7 @@ class Position2D():
         x = self.x / other
         y = self.y / other
         del self
-        return Position2D(x, y)
+        return Position2D(x, y,root=self.root)
 
     def pack(self) -> tuple[float, float]:
         """returns the x and y in an tuple"""
@@ -243,20 +226,20 @@ class Position2D():
         x = 1 if self.x > 0 else -1 if self.x < 0 else 0
         y = 1 if self.y > 0 else -1 if self.y < 0 else 0
         del self
-        return Position2D(x, y)
+        return Position2D(x, y,root=self.root)
     
     def copy(self):
-        return Position2D(self.x, self.y)
+        return Position2D(self.x, self.y,root=self.root)
     
     def convertToScreen(self):
         x = (self.x-self.root.worldCenter.x)/self.root.zoom + self.root.screenCenter.x
         y = (self.y-self.root.worldCenter.y)/self.root.zoom + self.root.screenCenter.y
-        return (x,y)
+        return Position2D(x,y,root=self.root)
     
     def convertToWorld(self):
         x = (self.x - self.root.screenCenter.x)*self.root.zoom + self.root.worldCenter.x
         y = (self.y - self.root.screenCenter.y)*self.root.zoom + self.root.worldCenter.y
-        return (x,y)
+        return Position2D(x,y,root=self.root)
 
 class Object2D():
     """
@@ -270,15 +253,15 @@ class Object2D():
         self.bg = bg
         self.root = root
         self.pointList = pointList
-        self.Middle = Position2D(sum(point.x for point in self.pointList)/2, sum(point.y for point in self.pointList)/2) # Average of X and Y: middle of the object
+        self.Middle = Position2D(sum(point.x for point in self.pointList)/2, sum(point.y for point in self.pointList)/2,root=self.root) # Average of X and Y: middle of the object
         self.root.addObject(self)
 
     def __str__(self):
-        return str(self.pack())
+        return str(point.pack() for point in self.pointList)
 
     def place(self):
         windowPoints = [point.convertToScreen() for point in self.pointList]
-        self.root.canvas.create_polygon([coord for point in windowPoints for coord in point],fill=self.bg)
+        self.root.canvas.create_polygon([coord for point in windowPoints for coord in point.pack()],fill=self.bg)
 
 if __name__ == "__main__":
     root = MainWindow()
