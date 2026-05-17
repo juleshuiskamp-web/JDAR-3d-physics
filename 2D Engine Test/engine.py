@@ -1,71 +1,44 @@
-from __future__ import annotations # Makes circular references possible
-import engineErrors as e
+from __future__ import annotations
 import math
+from itertools import combinations  
 
-EPSILON = 10 ** -9 # Small number used for collision checks etc
+class Point:
+    def __init__(self, x: int | float, y: int | float):
+        self.x, self.y = x, y
 
-class Position2D():
-    def __init__(self, x: float, y: float):
-        self.x = x
-        self.y = y
-
-    def __sub__(self, other) -> Position2D:
-        if not isinstance(other, Position2D):
-            return NotImplemented
-        x = self.x - other.x
-        y = self.y - other.y
-        del self
-        return Position2D(x, y)
+    def __sub__(self, other):
+        assert isinstance(other, Point)
+        return Point(self.x - other.x, self.y - other.y)
     
-    def __add__(self, other) -> Position2D:
-        if not isinstance(other, Position2D):
-            return NotImplemented
-        x = self.x + other.x
-        y = self.y + other.y
-        del self
-        return Position2D(x, y)
-
-    def __str__(self):
-        return str(self.pack())
+    def __truediv__(self, other):
+        return Point(self.x / other, self.y / other)
     
-    def __mul__(self, other) -> Position2D:
-        if not isinstance(other, (float, int)):
-            return NotImplemented
-        x = self.x * other
-        y = self.y * other
-        del self
-        return Position2D(x, y)
+    def __mul__(self, other):
+        return Point(self.x * other, self.y * other)
     
-    def __truediv__(self, other) -> Position2D:
-        if not isinstance(other, (float, int)):
-            return NotImplemented
-        x = self.x / other
-        y = self.y / other
-        del self
-        return Position2D(x, y)
+    def __add__(self, other):
+        assert isinstance(other, Point)
+        return Point(self.x + other.x, self.y + other.y)
 
-    def distance(self, point: Position2D) -> float:
-        d = math.sqrt((point.x - self.x)**2 + (point.y - self.y)**2)
-        return d
-
-    def pack(self) -> tuple[float, float]:
-        return (self.x, self.y)
-
-    def update(self, x: float, y: float) -> None:
-        self.x = x
-        self.y = y
-
-    def normalize(self) -> Position2D:
-        x = 1 if self.x > 0 else -1 if self.x < 0 else 0
-        y = 1 if self.y > 0 else -1 if self.y < 0 else 0
-        del self
-        return Position2D(x, y)
+    def pack(self) -> tuple[int | float, int | float]:
+        return self.x, self.y
     
-    def copy(self):
-        return Position2D(self.x, self.y)
-
+    def rotated(self, pivot: Point, angle: int) -> Point:
+        """
+        Rotate self around the pivot. Returns a new point.
+        
+        Args:
+            pivot: Point to rotate self around
+            angle: Angle (in degrees)
+        """
+        angle = math.radians(angle)
+        dx, dy = (self.x - pivot.x), (self.y - pivot.y) # Transform to local space
+        x = pivot.x + math.cos(angle) * dx - math.sin(angle) * dy
+        y = pivot.y + math.sin(angle) * dx + math.cos(angle) * dy
+        return Point(x, y)
+    
 class Vector2D():
-    def __init__(self, origin: Position2D, target: Position2D, force: float):
+    def __init__(self, origin: Point, target: Point, force: float):
         """
         Parameters:
         origin (Position2D): Origin of the force
@@ -86,14 +59,12 @@ class Vector2D():
 
     def __add__(self, other):
         if isinstance(other, Vector2D):
-            if not self.origin.pack() == other.origin.pack():
-                raise e.InvalidOriginsError(f"Origins {self.origin} and {other.origin} are different")
+            assert self.origin.pack() == other.origin.pack(), f"Origins {self.origin.pack()} and {other.origin.pack()} are different"
             target = self.target - self.origin # normalize targets so it is in perspective to the origin
             other.target -= self.origin
             target += other.target
             origin = self.origin
             force = self.force + other.force
-            del self # Clean up
             return Vector2D(origin, target, force)
         if isinstance(other, (int, float)): # Check if other is a integer or float
             origin = self.origin
@@ -102,234 +73,138 @@ class Vector2D():
             target = self.target - self.origin
             target /= self.force
             target *= force
-            del self # Clean up
             return Vector2D(origin, target, force)
         return NotImplemented
 
     def pack(self) -> tuple[tuple[float, float], tuple[float, float], float]:
         return (self.origin.pack(), self.target.pack(), self.force)
 
-class Line2D():
-    def __init__(self, Point1: Position2D, Point2: Position2D, infinite: bool=False):
-        """
-        Create a line between two points
-        Parameters:
-        Point1 (Position2D): Point 1
-        Point2 (Position2D): Point 2
-        infinite (bool, optional): Should the line after the two points. Defaults to false
-        """
-        
-        self.infinite = infinite
-        if Point1.pack() == Point2.pack() and not infinite:
-            raise e.InvalidCoordinatesError(f"Point {Point1.pack()} and Point {Point2.pack()} are on the same location.\n- Did you mean to use Position2D instead?")
-        self.Point1, self.Point2 = (Point1, Point2) if Point1.x <= Point2.x else (Point2, Point1) # Point 1 forced to be the most left point
+class Object2D:
+    angle: int
+    """Rotation in degrees"""
+    mass: float
+    """Mass of the object in kg"""
 
-        self.vertical = None
-        # Find the slope of the line
-        if Point1.x == Point2.x:
-            self.slope = 0
-            if Point1.y != Point2.y:
-                # Vertical line
-                self.vertical = Point1.x
-            self.bias = 0
-        else:
-            self.slope = (Point1.y - Point2.y) / (Point1.x - Point2.x)
-            # Find the bias of the line
-            self.bias = self.Point1.y - self.slope * Point1.x
+    force: Vector2D
+    points: list[Point]
+    def __init__(self, point1: Point, point2: Point, static: bool=False, mass: float=1):
+        """
+        Args:
+            point1: One corner of the object
+            point2: Other corner of the object, opposite to point1
+            static: Should forces be applied to the object
+            mass: Mass of the object
+        """
+        self.mass = mass
+        xmin, xmax = min(point1.x, point2.x), max(point1.x, point2.x)
+        ymin, ymax = min(point1.y, point2.y), max(point1.y, point2.y)
+        self.points = [Point(xmin, ymin), Point(xmax, ymax), Point(xmin, ymax), Point(xmax, ymin)]
+        self.m = Point((xmin + xmax) / 2, (ymin + ymax) / 2)
+
+        self.angle = 0
+        self.force = None
+        self.static = static
+        self.velocity = Point(0, 0)
+        self.acceleration = Point(0, 0)
+
+    def check_collision(self, object: Object2D, point: Point) -> bool:
+        # Transform into local space of object and rotate the point
+        rotated = point.rotated(object.m, -object.angle)
+        # Check for collision
+        if (object.points[0].x <= rotated.x <= object.points[1].x and object.points[0].y <= rotated.y <= object.points[1].y):
+            return True
+        return False
+
+    def collide(self, other: Object2D) -> bool:
+        for point in self.points:
+            if self.check_collision(other, point):
+                return True
+        return False
     
-    def distance(self, point: Position2D):
-        if self.vertical: # Vertical line: distance is x difference
-            return abs(self.vertical - point.x)
-        elif self.slope == 0: # Horizontal line: distance is y difference
-            return abs(self.bias - point.y)
+    def move(self, x: float, y: float) -> None:
+        for point in self.points:
+            point.x += x
+            point.y += y
+        self.m.x += x
+        self.m.y += y
+
+    def reverse(self, dampening: float) -> None:
+        """Reverses both velocitys from self. Only if not static"""
+        if self.static:
+            return
         
-        # Find perpendicular line
-        pSlope = -1 / self.slope
-        pBias = point.y - pSlope * point.x
+        self.velocity *= -dampening
 
-        # Solve intersection between lines
-        # pSlope*x + pBias = self.slope*x + self.bias
-        crossX = (pBias - self.bias) / (self.slope - pSlope)
+class Engine:
+    objects: set[Object2D]
+    def __init__(self, gravity_multiplier: float=9.81, dampening: float=0.8, physics_scaler: float=1):
+        """
+        Create a new physics engine.
 
-        if not self.infinite: # Line is segment
-            if not self.Point1.x >= crossX >= self.Point2.x:
-                # Shortest distance is either endpoint
-                distance = min(point.distance(self.Point1), point.distance(self.Point2))
-                return distance
-        crossY = self.slope * crossX + self.bias
-        intersection = Position2D(crossX, crossY)
-        return intersection.distance(point)
+        Args:
+            gravity_multiplier: Global gravity multiplier. Defaults to 9.81 (earth)
+            dampening: Dampening applied on collision
+            physics_scaler: Multiplier on physics forces
+        """
+        self.grav = gravity_multiplier
+        self.dampening = dampening
+        self.phys = physics_scaler
 
-    def __truediv__(self, other):
-        if not isinstance(other, Position2D):
-            return NotImplemented
-        crossPoint = False # Defaults to no cross point
+        self.objects = set()
 
-        # Specifics: vertical and horizontal line:
-        if not self.vertical is None:
-            if other.x == self.vertical:
-                crossPoint = Position2D(other.x, other.y)
-            else:
-                return False
-        if self.slope == 0: 
-            if other.y == self.bias: # Horizontal line + line goes over point
-                crossPoint = Position2D(other.x, other.y)
-            else:
-                return False
-        # Check for crossing between Line and Dot
-        doesLineAndDotCross = self.bias == other.y - self.slope * other.x
-        if doesLineAndDotCross:
-            crossPoint = Position2D(other.x, other.y)
-        selfYs = (min(self.Point1.y, self.Point2.y), max(self.Point1.y, self.Point2.y))
-        # Check if point is possible on the line
-
-        invalidX = not self.Point2.x >= other.x >= self.Point1.x
-        invalidY = False if not self.vertical is None else not selfYs[0] >= other.y >= selfYs[1] 
-
-        if (not self.infinite) and (invalidX or invalidY):
-            # X is invalid or Y is invalid
-            return False
-        
-        # Returns default (False) if no crossPoint is found
-        return crossPoint
+    def add(self, *objects: Object2D):
+        for object in objects:
+            self.objects.add(object)
+        self.update()
     
-    def __str__(self):
-        return str(self.pack())
+    def update(self):
+        self.combs = list(combinations(self.objects, 2))
 
-    def pack(self) -> tuple[tuple[float, float], tuple[float, float]]:
-        return (self.Point1.pack(), self.Point2.pack())
+    def doubleCheck(self, object1: Object2D, object2: Object2D):
+        if object1.collide(object2):
+            return True
+        if object2.collide(object1):
+            return True
+        return False
 
-class Object2D():
-    def __init__(self, root: Engine2D, Point1: Position2D, Point2: Position2D, mass: float=1):
-        """
-        Parameters:
-        root (Engine2D): Root of this Object
-        Point1 (Position2D): Corner one of the Object
-        Point2 (Position2D): Corner opposite to Point1 of the Object
-        mass (float, optional): Mass of the object. Defaults to 1
-        """
-        self.root = root
-        self.forces = set()
+    def tick(self, dt: float=0.0166):
+        if len(self.objects) == 0:
+            return
+        # Apply gravity, velocity and acceleration
+        for i, object in enumerate(self.objects):
+            if object.static: continue
+            
+            collides = False, None
+            for ic, cobject in enumerate(self.objects):
+                if ic == i: continue
+                if self.doubleCheck(cobject, object):
+                    collides = True, cobject
+                    break
+            df = Point(0, -self.grav * object.mass) # For now only gravitational force
 
-        # Check if points are valid
-        pointsInvalid = any([ Coordinate1 == Coordinate2 for Coordinate1, Coordinate2 in zip(Point1.pack(), Point2.pack()) ])
-        if pointsInvalid:
-            # Points have equal X or Y coordinates
-            raise e.InvalidCoordinatesError(f"Point {Point1.pack()} and Point {Point2.pack()} are not opposite corners")
+            object.acceleration.x, object.acceleration.y = df.x / object.mass, df.y / object.mass
+            object.velocity.x += object.acceleration.x * dt * self.phys
+            object.velocity.y += object.acceleration.y * dt * self.phys
+
+            object.move(object.velocity.x * dt, object.velocity.y * dt)
+
+            if collides[0] and cobject.static:
+                # Object collides with is cobject
+                if self.doubleCheck(cobject, object): # Still collides, so move object back to prevent falling trough. Not sure if this breaks something, nor do i want to find out
+                    object.move(-object.velocity.x * dt, -object.velocity.y * dt)
+
+        if len(self.objects) == 1:
+            return
         
-        # # # # # # # # # # # # # # # # # # #
-        #       CORNER RECONSTRUCTION       #
-        # # # # # # # # # # # # # # # # # # #
-        # Make sure Point1 is always at the bottom left and Point2 at the top right
-        xCoordinates = (Point1.x, Point2.x)
-        yCoordinates = (Point1.y, Point2.y)
-        Point1.update(x = min(xCoordinates), y = min(yCoordinates))
-        Point2.update(x = max(xCoordinates), y = max(yCoordinates))
-        self.Middle = Position2D(sum(xCoordinates)/2, sum(yCoordinates)/2) # Average of X and Y: middle of the object
-        
-        # Create all four corners
-        # [bottomLeft, topLeft, topRight, bottomRight]
-        self.corners = [Point1, Position2D(Point1.x, Point2.y), Point2, Position2D(Point2.x, Point1.y)]
-        
-        # Add to root after creating corners so collisionchecks can actually happen
-        root.addObject(self)
+        # Simple bounce
+        for object1, object2 in self.combs:
+            if self.doubleCheck(object1, object2):
+                print("COLLISION")
+                object1.reverse(self.dampening)
+                object2.reverse(self.dampening)
+            
+o1 = Object2D(Point(10, 10), Point(20, 20))
+o2 = Object2D(Point(10, 30), Point(20, 20))
+o2.angle = 90
 
-    def __truediv__(self, other):
-        if not isinstance(other, Object2D):
-            return NotImplemented
-
-        # Other is a Object2D --> Check for collision between each corner of self and the other Object
-        # Create lines of the vertices of the other Object
-        # [ bottom, left, top, right ] collisions between other corners
-        other_vertices = [ Line2D(corner, other.corners[i-1]) for i, corner in enumerate(other.corners) ]
-
-        collisions = [ vertice / point for vertice in other_vertices for point in self.corners ]
-        return collisions
-
-    def __str__(self):
-        return str(self.pack())
-    
-    def move(self, x: float=0, y: float=0, checkCollisions: bool=False):
-        """
-        Move the targetted object by x and y.
-        Parameters:
-        x (float, optional): X movement
-        y (float, optional): Y movement
-        checkCollisions (bool, optional): Check for collisions during movement? Defaults to False. NOT IMPLEMENTED YET
-        """
-        for corner in self.corners:
-            corner.x += x
-            corner.y += y
-
-    def pack(self):
-        return tuple([ corner.pack() for corner in self.corners ])
-
-class Engine2D():
-    def __init__(self, Gravity: float=1):
-        """
-        Create a new Engine to place objects in
-        Parameters:
-        Gravity (float, optional): Gravity multiplier. Defaults to 1
-        """
-        self.gravity = Gravity
-        self.objects = []
-
-    def addObject(self, Object: Object2D, ignorecollisions: bool=False):
-        """
-        Add a object to the Engine and check if it doesnt interfere with other Objects
-        Parameters:
-        Object (Object2D): Object to add to the Engine
-        ignorecollisions (bool, optional): Should the Engine ignore collisions when spawning the Object? Defaults to False
-        """
-
-        if not ignorecollisions:
-            for collisionObject in self.objects:
-                # Find direction from new Object to other Object and normalize it
-                direction = (collisionObject.Middle - Object.Middle).normalize()
-                # Multiply direction by EPSILION to get a extremly small direction number
-                direction *= EPSILON
-                # Move the other object so it wont collide
-                collisionObject.move(direction.x, direction.y)
-
-                if any(Object / collisionObject): # New object collides with the collisionObject
-                    raise e.EngineNewObjectCollisionError(f"This object collides with another object!")
-                # Move other object back (obviously)
-                collisionObject.move(-direction.x, -direction.y)
-
-        self.objects.append(Object)
-
-    def renderTick(self) -> None:
-        """
-        Render a singular tick.
-        - Applies gravity to all object
-        - Detects collision
-        """
-        # Apply gravity
-        for object in self.objects:
-            # Calculate gravity vector
-            target = object.Middle + Position2D(0, -1)
-            gravity = Vector2D(object.Middle, target, 9.81 * self.gravity)
-            object.forces.add(gravity)
-
-        objectCombinations = [ (object1, object2) for object1 in self.objects for object2 in self.objects ]
-        collisions = []
-        
-        for object1, object2 in objectCombinations:
-            collisions.append(object1 / object2)
-
-if __name__ == "__main__":
-    p = Position2D(2, -2)
-    p2 = Position2D(5, 0)
-    p3 = Position2D(4, 10)
-    l = Line2D(p, p2)
-    print(l.distance(p3))
-
-    # origin = Position2D(2, -2)
-    # target = Position2D(4, -6)
-    # origin2 = Position2D(2, -2)
-    # target2 = Position2D(4, 4)
-    # root = Engine2D()
-    # object1 = Object2D(root, target, origin)
-    # object2 = Object2D(root, target2, origin2)
-    # print(object1 / object2)
-    # root.renderTick()
+print(o1.collide(o2))
