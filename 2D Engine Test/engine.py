@@ -37,56 +37,29 @@ class Point:
         y = pivot.y + math.sin(angle) * dx + math.cos(angle) * dy
         return Point(x, y)
     
-class Vector2D():
-    def __init__(self, origin: Point, target: Point, force: float):
-        """
-        Parameters:
-        origin (Position2D): Origin of the force
-        target (Position2D): Target of the force
-        force (float): Force from the Origin to the Target
-        """
-        self.origin = origin
-        self.force = force
-        target -= origin # Change target so it is in perspective to the origin
-        
-        # Calculate lenght and normalize so 1 == 1N
-        lenght = math.sqrt(target.x ** 2 + target.y ** 2)
-        target /= lenght
-        target *= force
+    def normalize(self) -> Point:
+        def n(coord): # Helper function to prevent writing this twice
+            return 1 if coord > 0 else -1 if coord < 0 else 0
+        return Point(n(self.x), n(self.y))
+    
+    def abs(self) -> Point:
+        """Returns a new point with the absolute values of x and y"""
+        return Point(abs(self.x), abs(self.y))
 
-        target += origin
-        self.target = target
-
-    def __add__(self, other):
-        if isinstance(other, Vector2D):
-            assert self.origin.pack() == other.origin.pack(), f"Origins {self.origin.pack()} and {other.origin.pack()} are different"
-            target = self.target - self.origin # normalize targets so it is in perspective to the origin
-            other.target -= self.origin
-            target += other.target
-            origin = self.origin
-            force = self.force + other.force
-            return Vector2D(origin, target, force)
-        if isinstance(other, (int, float)): # Check if other is a integer or float
-            origin = self.origin
-            force = self.force + other
-            # Calculate new target
-            target = self.target - self.origin
-            target /= self.force
-            target *= force
-            return Vector2D(origin, target, force)
-        return NotImplemented
-
-    def pack(self) -> tuple[tuple[float, float], tuple[float, float], float]:
-        return (self.origin.pack(), self.target.pack(), self.force)
+    def copy(self) -> Point:
+        return Point(self.x, self.y)
 
 class Object2D:
-    angle: int
-    """Rotation in degrees"""
+    id: int
+    """Identifier set by engine2D.add"""
+
     mass: float
     """Mass of the object in kg"""
+    middle: Point
+    """middle point of this object (m for short)"""
 
-    force: Vector2D
     points: list[Point]
+    """Format: bottom left, top right"""
     def __init__(self, point1: Point, point2: Point, static: bool=False, mass: float=1):
         """
         Args:
@@ -98,46 +71,50 @@ class Object2D:
         self.mass = mass
         xmin, xmax = min(point1.x, point2.x), max(point1.x, point2.x)
         ymin, ymax = min(point1.y, point2.y), max(point1.y, point2.y)
-        self.points = [Point(xmin, ymin), Point(xmax, ymax), Point(xmin, ymax), Point(xmax, ymin)]
-        self.m = Point((xmin + xmax) / 2, (ymin + ymax) / 2)
+        self.points = [Point(xmin, ymin), Point(xmax, ymax)]
+        self.middle = Point((xmin + xmax) / 2, (ymin + ymax) / 2)
+        self.range = Point((xmax - xmin) / 2, (ymax - ymin) / 2) # Avg range for collisions
 
-        self.angle = 0
-        self.force = None
         self.static = static
         self.velocity = Point(0, 0)
         self.acceleration = Point(0, 0)
 
-    def check_collision(self, object: Object2D, point: Point) -> bool:
-        # Transform into local space of object and rotate the point
-        rotated = point.rotated(object.m, -object.angle)
-        # Check for collision
-        if (object.points[0].x <= rotated.x <= object.points[1].x and object.points[0].y <= rotated.y <= object.points[1].y):
-            return True
-        return False
+    def collide(self, other: Object2D):
+        """
+        Returns
+            does collide?, xoverlap, yoverlap
+        """
+        assert isinstance(other, Object2D)
+        delta = (other.middle - self.middle).abs()
+        overlap = (self.range + other.range) - delta
+        
+        if overlap.x <= 0 or overlap.y <= 0:
+            return False, 0, 0
 
-    def collide(self, other: Object2D) -> bool:
-        for point in self.points:
-            if self.check_collision(other, point):
-                return True
-        return False
+        if overlap.x > overlap.y:
+            return True, 0, max(0, overlap.y)  * (-1 if self.middle.y < other.middle.y else 1)
+        else:
+            return True, max(0, overlap.x) * (-1 if self.middle.x < other.middle.x else 1), 0
     
     def move(self, x: float, y: float) -> None:
         for point in self.points:
             point.x += x
             point.y += y
-        self.m.x += x
-        self.m.y += y
+        self.middle.x += x
+        self.middle.y += y
 
-    def reverse(self, dampening: float) -> None:
-        """Reverses both velocitys from self. Only if not static"""
-        if self.static:
-            return
-        
-        self.velocity *= -dampening
+    def damp(self, dampening: float, overlapx: float, overlapy: float) -> None:
+        if overlapx != 0:
+            self.velocity.x *= -dampening
+        if overlapy != 0:
+            self.velocity.y *= -dampening
 
 class Engine:
     objects: set[Object2D]
-    def __init__(self, gravity_multiplier: float=9.81, dampening: float=0.8, physics_scaler: float=1):
+    phys: float
+    """Physics scaler. Used for making the simulation move objects faster"""
+
+    def __init__(self, gravity_multiplier: float=9.81, dampening: float=0.8, physics_scaler: float=1, friction: float=0.999):
         """
         Create a new physics engine.
 
@@ -145,66 +122,60 @@ class Engine:
             gravity_multiplier: Global gravity multiplier. Defaults to 9.81 (earth)
             dampening: Dampening applied on collision
             physics_scaler: Multiplier on physics forces
+            friction: Multiplier for all forces (applied every tick). Number between 0 and 1. 1 is no friction and 0 is no movement
         """
         self.grav = gravity_multiplier
         self.dampening = dampening
         self.phys = physics_scaler
+        self.friction = max(min(friction, 1), 0)
 
         self.objects = set()
 
     def add(self, *objects: Object2D):
         for object in objects:
+            object.id = len(self.objects)
             self.objects.add(object)
         self.update()
     
     def update(self):
-        self.combs = list(combinations(self.objects, 2))
-
-    def doubleCheck(self, object1: Object2D, object2: Object2D):
-        if object1.collide(object2):
-            return True
-        if object2.collide(object1):
-            return True
-        return False
+        self.combs = [ comb for comb in combinations(self.objects, 2) if not (comb[0].static and comb[1].static) ]
 
     def tick(self, dt: float=0.0166):
         if len(self.objects) == 0:
             return
         # Apply gravity, velocity and acceleration
-        for i, object in enumerate(self.objects):
+        for object in self.objects:
             if object.static: continue
-            
-            collides = False, None
-            for ic, cobject in enumerate(self.objects):
-                if ic == i: continue
-                if self.doubleCheck(cobject, object):
-                    collides = True, cobject
-                    break
-            df = Point(0, -self.grav * object.mass) # For now only gravitational force
+    
+            deltaforce = Point(0, -self.grav * object.mass) # For now only gravitational force
 
-            object.acceleration.x, object.acceleration.y = df.x / object.mass, df.y / object.mass
+            object.acceleration.x, object.acceleration.y = deltaforce.x / object.mass, deltaforce.y / object.mass
+
+            # Apply friction
+            object.velocity *= self.friction
             object.velocity.x += object.acceleration.x * dt * self.phys
             object.velocity.y += object.acceleration.y * dt * self.phys
 
             object.move(object.velocity.x * dt, object.velocity.y * dt)
-
-            if collides[0] and cobject.static:
-                # Object collides with is cobject
-                if self.doubleCheck(cobject, object): # Still collides, so move object back to prevent falling trough. Not sure if this breaks something, nor do i want to find out
-                    object.move(-object.velocity.x * dt, -object.velocity.y * dt)
 
         if len(self.objects) == 1:
             return
         
         # Simple bounce
         for object1, object2 in self.combs:
-            if self.doubleCheck(object1, object2):
-                print("COLLISION")
-                object1.reverse(self.dampening)
-                object2.reverse(self.dampening)
-            
-o1 = Object2D(Point(10, 10), Point(20, 20))
-o2 = Object2D(Point(10, 30), Point(20, 20))
-o2.angle = 90
+            collision, overlapx, overlapy = object1.collide(object2)
+            if collision: 
+                m1 = 1 if object2.static else 0.5
+                m2 = 1 if object1.static else 0.5
 
-print(o1.collide(o2))
+                if (not object1.static) and (not object2.static):
+                    v1, v2 = object1.velocity.copy(), object2.velocity.copy()
+                    object1.velocity, object2.velocity = v2, v1
+                else:
+                    object1.damp(self.dampening, overlapx, overlapy)
+                    object2.damp(self.dampening, overlapx, overlapy)
+
+                if not object1.static:
+                    object1.move(overlapx * m1, overlapy * m1)
+                if not object2.static:
+                    object2.move(-overlapx * m2, -overlapy * m2)
