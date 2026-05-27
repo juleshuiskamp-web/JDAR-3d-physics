@@ -36,7 +36,7 @@ class Viewer(pyglet.window.Window):
         self.batch = pyglet.graphics.Batch()
         pyglet.clock.schedule_interval(self.engine_update, 1/PFPS)
         self.graph_mult = 5
-        self.engine = engine.Engine(physics_scaler=4, friction=100)
+        self.engine = engine.Engine(physics_scaler=4, friction=0.999)
         self.objects = [ 
             GUI_Object(self, engine.Point(10, 10), engine.Point(100, 30), static=True, offset=OFFSET, scale=SCALE), 
             GUI_Object(self, engine.Point(10, 40), engine.Point(30, 60), offset=OFFSET, scale=SCALE), 

@@ -103,11 +103,12 @@ class Object2D:
         self.middle.x += x
         self.middle.y += y
 
-    def damp(self, dampening: float, overlapx: float, overlapy: float) -> None:
+    def reverse(self, overlapx: float, overlapy: float) -> None:
+        """Reverses velocities if a collsion happend there"""
         if overlapx != 0:
-            self.velocity.x *= -dampening
+            self.velocity.x *= -1
         if overlapy != 0:
-            self.velocity.y *= -dampening
+            self.velocity.y *= -1
 
 class Engine:
     objects: set[Object2D]
@@ -172,8 +173,8 @@ class Engine:
                     v1, v2 = object1.velocity.copy(), object2.velocity.copy()
                     object1.velocity, object2.velocity = v2, v1
                 else:
-                    object1.damp(self.dampening, overlapx, overlapy)
-                    object2.damp(self.dampening, overlapx, overlapy)
+                    object1.reverse(overlapx, overlapy)
+                    object2.reverse(overlapx, overlapy)
 
                 if not object1.static:
                     object1.move(overlapx * m1, overlapy * m1)
