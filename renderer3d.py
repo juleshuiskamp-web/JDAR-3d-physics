@@ -6,6 +6,8 @@ from PIL import Image, ImageTk
 import numpy as np
 import engine
 
+SCALE = 10
+OFFSET = (100, 100)
 TARGET_FPS = 20
 FRAME_MS = 1000 // TARGET_FPS
 CAM_ROT_SPEED = 0.05
@@ -227,7 +229,7 @@ class Canvas3D(tk.Canvas):
         self.photo.paste(self.img)
 
         elapsed_time = (t.perf_counter() - start) * 1000
-        print(elapsed_time)
+
         self.frame_times.append(elapsed_time)
         if len(self.frame_times) > 30:
             self.frame_times.pop(0)
