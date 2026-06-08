@@ -1,31 +1,14 @@
 from __future__ import annotations
-import subprocess
-import sys
-
-PFPS = 120 # Physics frames per second
-OFFSET = (100, 100)
-SCALE = 10
-TARGET_FPS = 20
-FRAME_MS = 1000 // TARGET_FPS
-CAM_ROT_SPEED = 0.05
-
-def install_dependicies(package, import_name=None):
-    import_name = import_name or package
-    try:
-        __import__(import_name)
-    except ImportError:
-        print(f"Installing {package}...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-install_dependicies("pillow","PIL")
-install_dependicies("numpy")
-
 import math as m
 import tkinter as tk
-from Position2D import Position2D
 import time as t
 from PIL import Image, ImageTk
 import numpy as np
 import engine
+
+TARGET_FPS = 20
+FRAME_MS = 1000 // TARGET_FPS
+CAM_ROT_SPEED = 0.05
 
 class Position3D:
     """this is the class for making a 3d vector/point"""
@@ -65,7 +48,7 @@ class Position3D:
     def projector(self, fov: float, camera: 'Position3D', screen_w: int, screen_h: int):
         """
         Projects this point onto the screen.
-        Returns (Position2D, zDist) or None if behind camera.
+        Returns (engine.Point, zDist) or None if behind camera.
         """
         fHoek = m.radians(fov / 2)
         focal_len = screen_w / 2 / m.tan(fHoek)
@@ -74,7 +57,7 @@ class Position3D:
             return None
         x = (self.x - camera.x) * focal_len / zDist + screen_w / 2
         y = (self.y - camera.y) * focal_len / zDist + screen_h / 2
-        return Position2D(x, y), zDist
+        return engine.Point(x, y), zDist
     
     def rotate_point(self,camera,yaw,pitch,roll) -> Position3D:
         """translate a point relative to a turnning point(bijv. camera) deze functie is gebaseerd om een ratatie matrix """
